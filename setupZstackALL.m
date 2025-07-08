@@ -35,14 +35,10 @@ end
 input('Check that a) Scan phase ~0.8888. b) Laser power = 70% before continuing.');
 
 %% Parameter Definition
-global Z  % Not sure why this is global, but keeping it this way for now
-
-% Determines how many frames (volumes) to average at each z-position.
-averageNVolumes = naverage;
 
 % Calculates reference half-width, maxing out at 12 reference planes on either end of the 
-% imaged plane range. This determines how many zum-spaced planes are acquired above and below
-% the each of the supported imaging plane(s) to support Z-drift correction.
+% imaged plane range. This determines how many sub-planes are acquired zum microns above and below
+% each of the target imaging plane(s) to support Z-drift correction.
 nzhalf = min(floor((zum-1)/2),12);
 
 % Generates z-plane imaging positions.
@@ -91,11 +87,11 @@ fprintf('Grabbing reference volume...\n');
 % Configures the acquisition to operate on the set of reference Z-planes and acquire the requested number of 
 % frames at each plane (20).
 hSI.hStackManager.arbitraryZs = sort(refZs(:));
-hSI.hStackManager.numVolumes = averageNVolumes;
+hSI.hStackManager.numVolumes = naverage;
 hSI.hStackManager.enable = true;
 
 % Buffers frames in frame averaging buffer.
-hSI.hDisplay.displayRollingAverageFactor = averageNVolumes;
+hSI.hDisplay.displayRollingAverageFactor = naverage;
 
 % Disables motion correction during z-stack acquisition and ensures MROI mode is active.
 hSI.hMotionManager.enable = false;
@@ -125,7 +121,7 @@ fprintf('Setting up Motion Estimators...\n');
 
 hSI.hMotionManager.clearAndDeleteEstimators();  % Removes existing estimators.
 
-% Configures MotionEstimation plugin to use Marius code.
+% Configures MotionEstimation plugin to use Marius scripts.
 hSI.hMotionManager.estimatorClassName = 'scanimage.components.motionEstimators.MariusMotionEstimator';
 hSI.hMotionManager.correctorClassName = 'scanimage.components.motionCorrectors.MariusMotionCorrector2';
 
@@ -140,10 +136,22 @@ arrayfun(@(rd)rd.onlyKeepChannels(channel),roiDatas);
 nRois = size(roiDatas,1);
 nVolumes = size(roiDatas,2);
 
-fprintf('Aligning %d stacks...\n',nVolumes);
+% Preallocates Z as cell array for efficiency, since the number of ROIs and planes is known.
+Z = cell(nRois, numel(centerZs));
 
-%  Aligns z-stacks
-Z = [];
+% Preeallocates each Z cell by sampling ROI dimensions.
+for roiIdx = 1:nRois
+    if ~isempty(roiDatas(roiIdx,1).imageData{1})
+        sampleImg = roiDatas(roiIdx,1).imageData{1}{1};
+        for iz = 1:numel(centerZs)
+            % Preallocates for expected number of reference planes.
+            Z{roiIdx, iz} = zeros(size(sampleImg,1), size(sampleImg,2), ...
+                                  2*nzhalf+1, 'single');
+        end
+    end
+end
+
+fprintf('Aligning %d stacks...\n',nVolumes);
 
 % Loops over all ROIs
 for roiIdx = 1:nRois
@@ -152,7 +160,7 @@ for roiIdx = 1:nRois
     roi0 = copy(roiDatas(roiIdx,:));
     
     % Precreates a template storage structure with correct dimensions, but no image data.
-    for j = 1:averageNVolumes
+    for j = 1:naverage
         roi0(j).imageData = [];  % Clears image data, but keeps the metadata
     end
     
@@ -162,7 +170,7 @@ for roiIdx = 1:nRois
         
         % Extracts the data for relevant reference z-planes.
         roi1 = copy(roi0);
-        for j = 1:averageNVolumes
+        for j = 1:naverage
             roi1(j).imageData{1}  = roiDatas(roiIdx, j).imageData{1}(id);
             roi1(j).zs  = roi1(j).zs(id);
         end

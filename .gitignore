@@ -1,2 +1,2 @@
-
-setupZstackALL.asv
+# Ignores temporary MATLAB save files.
+*.asv
