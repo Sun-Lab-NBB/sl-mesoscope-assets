@@ -1,4 +1,4 @@
-function [zstack] = setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel)
+function setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel, curvcorrection, naverage, root)
 
 % Limited argument validation and default value assignment support. May not
 % work on older MatLab versions, but good for R2022b+.
@@ -6,19 +6,21 @@ arguments
     hSI  % ScanImage handle object. Cannot be validated due to how MBF implemented the class.
     hSICtl  % ScanImage Controller. Cannot be validated due to how MBF implemented the class.
     zum (1,1) double {mustBePositive, mustBeFinite, mustBeInteger} = 20  % Plane z-spacing in micrometers
-    zrange double {mustBePositive, mustBeInteger, validateZRange} = 1050  % Single value or [min, max]. The range of imaged z-planes.
+    zrange double {mustBePositive, mustBeInteger} = 1050  % Single value or [min, max]. The range of imaged z-planes.
     zmirror double {mustBePositive, mustBeInteger} = []  % Optional mirroring positions
     order {mustBeMember(order, {'', 'smooth'})} = ''  % PLane acquisition order.
     channel (1,1) double {mustBePositive, mustBeInteger} = 1  % The channel to use for motion detection.
-    enableFieldCurveCorr (1,1) logical = true  % Determines whether to use curvature correction.
+    curvcorrection (1,1) logical = true  % Determines whether to use curvature correction.
+    naverage (1,1) double {mustBePositive, mustBeInteger} = 20  % The number of frames (volumes) to average.
+    root (1,:) char {mustBeNonempty} = 'F:\mesodata\mesoscope_data'  % Root folder where to save acquired data
 end
 
 % Converts single zrange values to [min, max] format expected by the rest of the function.
 if isscalar(zrange)
-    fprintf('Single plane imaging at z = %d µm.\n', zrange);
+    fprintf('Configuring single plane imaging at z = %d µm.\n', zrange);
     zrange = [zrange, zrange];
 else
-    fprintf('Z-stack imaging from %d to %d µm.\n', zrange(1), zrange(2));
+    fprintf('Configuring Z-stack imaging from %d to %d µm.\n', zrange(1), zrange(2));
 end
 
 % Validates zmirror has correct format if provided
@@ -36,7 +38,7 @@ input('Check that a) Scan phase ~0.8888. b) Laser power = 70% before continuing.
 global Z  % Not sure why this is global, but keeping it this way for now
 
 % Determines how many frames (volumes) to average at each z-position.
-averageNVolumes = 20;
+averageNVolumes = naverage;
 
 % Calculates reference half-width, maxing out at 12 reference planes on either end of the 
 % imaged plane range. This determines how many zum-spaced planes are acquired above and below
@@ -66,13 +68,13 @@ end
 
 % Depending on the configuration, ensures that FieldCurvatureCorredction is either enabled or disabled.
 % For Mesoscope, it should be enabled in most cases.
-if hSI.hFastZ.enableFieldCurveCorr ~= enableFieldCurveCorr
-    if enableFieldCurveCorr
+if hSI.hFastZ.enableFieldCurveCorr ~= curvcorrection
+    if curvcorrection
         fprintf('Field curvature correction: Enabled.\n');
     else
         fprintf('Field curvature correction: Disabled.\n');
     end
-    hSI.hFastZ.enableFieldCurveCorr = enableFieldCurveCorr;
+    hSI.hFastZ.enableFieldCurveCorr = curvcorrection;
 end
 
 %% Reference ROI setup
@@ -101,10 +103,14 @@ hSI.hRoiManager.mroiEnable = true;
 hSI.hStackManager.stackReturnHome = true;
 
 % Ensures that the grabbed frames are saved as 'zstack_0000.tiff' file.
-hSI.hChannels.loggingEnable = true;  % Enable data logging
-hSI.hScan2D.logAverageFactor = 1;  % Save every frame (no averaging in saved data)
-hSI.hScan2D.logFileStem = 'zstack';  % Base filename
-hSI.hScan2D.logFileCounter = 0;  % Starting file counter
+hSI.hScan2D.logOverwriteWarn = false; % Disables overwrite warning
+hSI.hChannels.loggingEnable = true;  % Enables data logging (saving)
+hSI.hScan2D.logAverageFactor = 1;  % Saves every frame (no averaging in saved data)
+hSI.hScan2D.logFilePath = root;  % Configures the root output directory
+hSI.hScan2D.logFileStem = 'zstack';  % Saves teh stack data as 'zstack'
+hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
+hSI.hScan2D.logFramesPerFile = 500;  % Configures tiff stacks to store at most 500 frames.
+hSI.extTrigEnable = false;  % Ensures that external trigger mode is disabled.
 
 % Activates frame acquisition (starts grabbing)
 hSI.startGrab();
@@ -180,29 +186,43 @@ end
 % Re-enables the Motion Detection plugin and shows it to user.
 hSI.hMotionManager.enable = true;
 hSICtl.showGUI('MotionDisplay');
+
+% Caches the generated zstack object tot he outptu folder as a zstack.mat file.
+save(fullfile(root, 'zstack.mat'), 'zstack');
 %%
 
 %% Prepares the system for acquisition
 fprintf('Preparing system for acquisition...\n');
 
+% Confgures the stack maanger to target requested planes
 hSI.hStackManager.stackDefinition = 'arbitrary';  % Enables arbitrary stack traversal.
 hSI.hStackManager.stackMode = 'fast';  % Enables fast-z (voice-coil)
-% Uses step mode to optionally support acquiring multiple frames per ROI
-hSI.hStackManager.stackFastWaveformType = 'step';  
+hSI.hStackManager.stackFastWaveformType = 'step';  % Step mode is required for volumetric averaging
 hSI.hStackManager.arbitraryZs = centerZs(:);  % Configures z-stack manager to target the requested imaging planes.
-disp(hSI.hStackManager.arbitraryZs)  % Ensures that the stack manager window is displayed
 
-% Activates the stack manager and ensures the number of volumes is set to a very high value. Since each acquisition runs
-% until it acquires the requested number of frames, this effectively makes the acquisition only stop in response to manual
-% or external triggers.
+% Configures the acquisition settings
 hSI.hStackManager.enable = true;
-hSI.hStackManager.numVolumes = 100000;
+hSI.hStackManager.numVolumes = 100000;  % Prevents the runtime from stopping without triggers.
+hSI.acqsPerLoop = 200;  % To support recovering from runtime failures, this has to be large.
+hSI.loopAcqInterval = 1;  % Although external trigger mode does not use intervals, ensures it is set to 1 for safety.
 
 % Presets frame averaging to 5 to give better picture at runtime.
 hSI.hDisplay.displayRollingAverageFactor = 5;
 
-% Ensures that external trigger mode is enabled.
-hSI.hScan2D.trigAcqTypeExternal = true;  % Enable external triggering
+% Configures external trigger mode
+hSI.extTrigEnable = true;  % Ensures that external trigger mode is enabled.
+hSI.hScan2D.trigNextStopEnable = true;  % Ensures that stop and next triggers are enabled
+% Acquisition start trigger
+hSI.hScan2D.trigAcqInTerm = 'D0.0';  % Breakout panel port D0.0
+hSI.hScan2D.trigAcqEdge = 'rising'; % Triggers on rising edge
+% Acquisition stop trigger
+hSI.hScan2D.trigStopInTerm = 'D0.1'; % Breakout panel port D0.1
+hSI.hScan2D.trigStopEdge = 'rising'; % Triggers on rising edge
+
+% Configures data output stream
+hSI.hScan2D.logFileStem = 'session';  % All data files will use the root name 'session'
+hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
+hSI.hScan2D.logFramesPerFile = 500;  % Configures tiff stacks to store at most 500 frames.
 
 % Ensures that the motion estimator is enabled
 hSI.hMotionManager.enable = true;
@@ -215,6 +235,10 @@ hSI.hMotionManager.correctionEnableZ    = 1;  % Enables z-correction
 hSI.hMotionManager.correctionBoundsZ    = [-100 100];  % Z-correction is performed within +- 100 um of target plane
 hSI.hMotionManager.hMotionCorrector.thresholdExceedTime_s = 5;  % Decreased from the default value of 10
 hSI.hMotionManager.hMotionCorrector.correctionInterval_s = 5;  % Decreased from the default value of 10
-hSI.hMotionManager.hMotionCorrector.correctionThreshold = [.1 .1 .5];  # x, y, z
+hSI.hMotionManager.hMotionCorrector.correctionThreshold = [.1 .1 .5];  % x, y, z
+
+% Starts the acquisition loop. The actual acquisition will not start until the system receives an external trigger.
+hSI.startLoop;
+fprintf('Acquisition loop: Started.\n');
 
 
