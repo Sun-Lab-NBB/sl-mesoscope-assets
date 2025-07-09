@@ -1,23 +1,66 @@
-function setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel, curvcorrection, naverage, root)
-    % This is a heavily refactored setupZstackALL function used in the original manuscript. The functon was 
-    % refactored to specialize it to work with the rest of Sun lab data acquisition specifciations and bindings.
-    % In addition to setting up motion estimation, the function now also statically configures ScanImage to 
-    % acquire the data in a way that is expected by Sun lab pipelines.
+function setupAcquisition(hSI, hSICtl, arguments)
+    % SETUPACQUISITION Prepares the Mesoscope system for acquiring experiment data in the Sun lab.
+    %
+    %   This is a heavily refactored 'setupZstackALL' function used in the original manuscript. The functon was 
+    %   refactored to specialize it to work with the rest of Sun lab data acquisition specifciations and bindings.
+    %   In addition to setting up motion estimation, the function now also statically configures ScanImage to 
+    %   acquire the data in a way that is expected by Sun lab pipelines and generates a high-definition zstack.
+    %
+    %   This function should be used to prepare the system for each experiment runtime, just before starting the
+    %   experiment.
+    %
+    %   Example function call (using default parameters): setupAcquisition(hSI, hSICtl)
+    %
+    % Arguments:
+    % - hSI: The ScanImage handle object.
+    % - hSICtl: The ScanImage Controller.
+    % - zum: The z-spacing step, in micrometers, to use for z-stack generation.
+    % - zrange: The range of z-planes to image. When imaging a single plane, set to plane number, e.g. 1050. When
+    % imaging a slice, set to a numeric array that stores the slice boundaries in the order [min, max], e.g. [20, 400].
+    % - zmirror: Only for two-plane imaging. When imaging two planes separated by a non-imaged volume, e.g. when imaging
+    % only at the very top and bottom of the fastZ range, provide a numeric array of exclusion zone boundaries in the 
+    % order [min, max]. Note, both boundaries must be within the overall slice dimensions defined by the zrange, e.g.
+    % [40, 300]. The acquisition in this example case would be set to image data in the regions 30-40 and 300-400.
+    % - order: The order to use for z-stack acquisition. Supported options are '' (default) and 'smooth'. Default
+    % acquisition order iterates over the slices at each volume acquisition, e.g.: Z1, Z2, Z1, Z2. The 'smooth' order 
+    % instead acquires all frames at the given z-plane before moving to the next one, e.g. Z1, Z1, Z2, Z2.
+    % - channel: The chanel to use for motion registration. Since high-definition zstack is primarily intended to
+    % support advanced post-hoc motion analysis, it also uses the same cahnnel.
+    % - curvcorrection: Determines whether to enable or disable Field Curvature Correction support. Whether to enable
+    % this feature depends on the acquisition system (microscope).
+    % - naverage: The number of frames to acquire and average for each frame. Larger number of frames results in better
+    % motion characterization at the expense of longer processing times and higher draw on acquisition machine
+    % resources.
+    % - root: The path at which to output the generated MotionEstimator.me and zstack.tiff files. In the Sun lab, this
+    % is always set to the 'shared' mesoscoep data folder.
+    % - scalefactor: The factor by which to scale the X and Y resoltuin of all ROIs during the acquisition of the
+    % high-definition zstack.tiff file. The scaling maintains the initial ROI aspect ratios.
 
     % Limited argument validation and default value assignment support. May not
     % work on older MatLab versions, but good for R2022b+.
     arguments
-        hSI  % ScanImage handle object. Cannot be validated due to how MBF implemented the class.
-        hSICtl  % ScanImage Controller. Cannot be validated due to how MBF implemented the class.
-        zum (1,1) double {mustBePositive, mustBeFinite, mustBeInteger} = 20  % Plane z-spacing in micrometers
-        zrange double {mustBePositive, mustBeInteger} = 1050  % Single value or [min, max]. The range of imaged z-planes.
-        zmirror double {mustBePositive, mustBeInteger} = []  % Optional mirroring positions
-        order {mustBeMember(order, {'', 'smooth'})} = ''  % PLane acquisition order.
-        channel (1,1) double {mustBePositive, mustBeInteger} = 1  % The channel to use for motion detection.
-        curvcorrection (1,1) logical = true  % Determines whether to use curvature correction.
-        naverage (1,1) double {mustBePositive, mustBeInteger} = 20  % The number of frames (volumes) to average.
-        root (1,:) char {mustBeNonempty} = 'F:\mesodata\mesoscope_data'  % Root folder where to save acquired data
+        hSI  % Cannot be validated due to how MBF implemented the class.
+        hSICtl  % Cannot be validated due to how MBF implemented the class.
+        arguments.zum (1,1) double {mustBePositive, mustBeFinite, mustBeInteger} = 20
+        arguments.zrange double {mustBePositive, mustBeInteger} = 1050
+        arguments.zmirror double {mustBePositive, mustBeInteger} = []
+        arguments.order {mustBeMember(arguments.order, {'', 'smooth'})} = ''
+        arguments.channel (1,1) double {mustBePositive, mustBeInteger} = 1
+        arguments.curvcorrection (1,1) logical = true
+        arguments.naverage (1,1) double {mustBePositive, mustBeInteger} = 20
+        arguments.root (1,:) char {mustBeNonempty} = 'F:\mesodata\mesoscope_data'
+        arguments.scalefactor (1,:) double {mustBePositive} = 2.0
     end
+    
+    zum = arguments.zum;
+    zrange = arguments.zrange;
+    zmirror = arguments.zmirror;
+    order = arguments.order;
+    channel = arguments.channel;
+    curvcorrection = arguments.curvcorrection;
+    naverage = arguments.naverage;
+    root = arguments.root;
+    scalefactor = arguments.scalefactor;
     
     % Converts single zrange values to [min, max] format expected by the rest of the function.
     if isscalar(zrange)
@@ -36,7 +79,12 @@ function setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel, curvc
     end
     
     % Instructs the user to verify important imaging parameters before generating the reference stack.
-    input('Ensure that a) Scan phase ~0.8888. b) Laser power = 70%. c) Frame rate ~10 Hz. d) PMTs AutoOn: enabled.');
+    fprintf('Ensure that the following configuration parameters are applied:\n')
+    fprintf('a) Scan phase ~0.8888.\n')
+    fprintf('c) Frame rate ~10 Hz.\n')
+    fprintf('b) Laser power ~70 (~130 mV).\n')
+    fprintf('d) PMTs AutoOn: enabled.\n')
+    input('Enter anything to continue: ');
     
     %% Parameter Definition
     
@@ -47,18 +95,20 @@ function setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel, curvc
     
     % Generates z-plane imaging positions.
     if isempty(zmirror)
-        % If zmirror is not provided, creates a set of 'zum'-spaced planes from minimum to maximum imaging plane. 
+        % If zmirror is not provided, creates a uniform set of 'zum'-spaced planes from minimum to maximum. 
         centerZs = zrange(1):zum:zrange(2);
     else
         % If zmirror is provided, creates two plane sequences expanding outward from each of the imaging 
-        % focal points
-        centerZs = [[zmirror(1)-nzhalf:-zum:zrange(1)] [zmirror(2)+nzhalf:zum:zrange(2)]];
+        % focal points, given by zmirror. Assumes that both zmirror coordinates are within the range of planes
+        % specified by zrange. This excluds the middle region (slices within zmirror) from processing. This mode of 
+        % stack definition is used exclusively with two-plane imaging modes.
+        centerZs = [zmirror(1)-nzhalf:-zum:zrange(1) zmirror(2)+nzhalf:zum:zrange(2)];
     end
     
     % Sorts the center-points of each target plane resolved above and generates a set of 
     % planes above and below each imaging plane (reference Z-planes).
     centerZs = sort(centerZs);
-    refZs = centerZs(:) + [-nzhalf:nzhalf];
+    refZs = centerZs(:) + (-nzhalf:nzhalf);
     
     % 'Smooth' acquisition order acquires all frames for the target plane before moving to the
     % next one (Z1-Z1-Z1-Z2-Z2-Z2). Default acquisition order loops over planes (Z1-Z2-Z1-Z2-Z1-Z2)
@@ -102,14 +152,8 @@ function setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel, curvc
     hSI.hRoiManager.mroiEnable = true;
     hSI.hStackManager.stackReturnHome = true;
     
-    % Ensures that the grabbed frames are saved as 'zstack_0000.tiff' file.
-    hSI.hScan2D.logOverwriteWarn = false; % Disables overwrite warning
-    hSI.hChannels.loggingEnable = true;  % Enables data logging (saving)
-    hSI.hScan2D.logAverageFactor = 1;  % Saves every frame (no averaging in saved data)
-    hSI.hScan2D.logFilePath = root;  % Configures the root output directory
-    hSI.hScan2D.logFileStem = 'zstack';  % Saves teh stack data as 'zstack'
-    hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
-    hSI.hScan2D.logFramesPerFile = 500;  % Configures tiff stacks to store at most 500 frames.
+    % Ensures that the grabbed frames are discarded after runtime
+    hSI.hChannels.loggingEnable = false;  % Disables data logging (saving)
     hSI.acqsPerLoop = 1;  % Ensures that the number of acquisitions is set to 1. This is a safety check.
     hSI.hChannels.channelDisplay = 1;  % Ensures channel 1 is displayed
     hSI.extTrigEnable = false;  % Ensures that external trigger mode is disabled.
@@ -133,7 +177,6 @@ function setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel, curvc
     
     % Loads the ROI stack data from the ROI manager
     roiDatas = hSI.hDisplay.getRoiDataArray();
-    zstack = copy(roiDatas);
     
     % Filters the ROI data to only contain the motion registration channel data.
     arrayfun(@(rd)rd.onlyKeepChannels(channel),roiDatas);
@@ -172,7 +215,7 @@ function setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel, curvc
         
         % Finds reference planes for each target imaging position
         for iz = 1:numel(centerZs)
-            id = find(ismember(refZs', centerZs(iz) + [-nzhalf:nzhalf]));
+            id = find(ismember(refZs', centerZs(iz) + (-nzhalf:nzhalf)));
             
             % Extracts the data for relevant reference z-planes.
             roi1 = copy(roi0);
@@ -197,21 +240,83 @@ function setupZstackALL(hSI, hSICtl, zum, zrange, zmirror, order, channel, curvc
         
     end
     
-    % Re-enables the Motion Detection plugin and shows it to user.
-    hSI.hMotionManager.enable = true;
-    hSICtl.showGUI('MotionDisplay');
-    
-    % Caches the generated zstack object tot he outptu folder as a zstack.mat file.
-    fprintf('Generating zstack.mat file...\n');
-    save(fullfile(root, 'zstack.mat'), 'zstack');
-    
     % Saves the generated and applied motion estimators as MotionEstimator.me file
     fprintf('Generating MotionEstimator.me file...\n');
     hSI.hMotionManager.saveManagedEstimators(fullfile(root, 'MotionEstimator.me'));
     %%
     
+    %% High-definition zstack acquisition
+    fprintf('Acquiring a high-definition zstack...\n');
+
+    % Disables motion correction during z-stack acquisition and ensures MROI mode is active.
+    hSI.hMotionManager.enable = false;
+    hSI.hRoiManager.mroiEnable = true;
+    hSI.hStackManager.stackReturnHome = true;
+    
+    % Scales X and Y resolution of each ROI by the requested scale factor, generating a higher-definition zstack.
+    for i = 1:numel(hSI.hRoiManager.currentRoiGroup.rois)
+        roi = hSI.hRoiManager.currentRoiGroup.rois(i);
+        sf = roi.scanfields(1);
+    
+        % Scales current pixel dimensions
+        sf.pixelResolutionXY(1) = round(scalefactor * sf.pixelResolutionXY(1));
+        sf.pixelResolutionXY(2) = round(scalefactor * sf.pixelResolutionXY(2));
+    
+        % Reassigns updated scan field
+        roi.scanfields(1) = sf;
+        hSI.hRoiManager.currentRoiGroup.rois(i) = roi;  % Updates the ROI in the manager
+    end
+    
+    % Configures the acquisition to operate on the set of reference Z-planes and acquire the requested number of 
+    % frames at each plane.
+    hSI.hStackManager.arbitraryZs = sort(refZs(:));
+    hSI.hStackManager.numVolumes = naverage;
+    hSI.hStackManager.enable = true;
+    
+    % Buffers frames in frame averaging buffer.
+    hSI.hDisplay.displayRollingAverageFactor = naverage;
+    
+    % Ensures that the grabbed frames are saved as 'zstack_0000.tiff' file.
+    hSI.hScan2D.logOverwriteWarn = false; % Disables overwrite warning
+    hSI.hChannels.loggingEnable = true;  % Enables data logging (saving)
+    hSI.hScan2D.logAverageFactor = 1;  % Saves every frame (no averaging in saved data)
+    hSI.hScan2D.logFilePath = root;  % Configures the root output directory
+    hSI.hScan2D.logFileStem = 'zstack';  % Saves teh stack data as 'zstack'
+    hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
+    hSI.hScan2D.logFramesPerFile = 500;  % Configures tiff stacks to store at most 500 frames.
+    hSI.acqsPerLoop = 1;  % Ensures that the number of acquisitions is set to 1. This is a safety check.
+    hSI.hChannels.channelDisplay = 1;  % Ensures channel 1 is displayed
+    hSI.extTrigEnable = false;  % Ensures that external trigger mode is disabled.
+    
+    % Activates frame acquisition (starts grabbing)
+    hSI.startGrab();
+    while hSI.active
+        pause(1); % Waits for the stack to be acquired
+    end
+    
+    fprintf('High-definition zstack: Acquired.\n');
+    %%
+    
     %% Prepares the system for acquisition
     fprintf('Preparing system for acquisition...\n');
+
+    % Loops through each ROI and rescales it back to the original dimensions (from high-definition ones)
+    for i = 1:numel(hSI.hRoiManager.currentRoiGroup.rois)
+        roi = hSI.hRoiManager.currentRoiGroup.rois(i);
+        sf = roi.scanfields(1);
+    
+        % Scalse current pixel dimensions
+        sf.pixelResolutionXY(1) = round(1/scalefactor * sf.pixelResolutionXY(1));
+        sf.pixelResolutionXY(2) = round(1/scalefactor * sf.pixelResolutionXY(2));
+
+        % Reassignd updated scan field
+        roi.scanfields(1) = sf;
+        hSI.hRoiManager.currentRoiGroup.rois(i) = roi;  % Updates ROI in the manager
+    end
+
+    % Re-enables the Motion Detection plugin and shows it to user.
+    hSI.hMotionManager.enable = true;
+    hSICtl.showGUI('MotionDisplay');
     
     % Confgures the stack maanger to target requested planes
     hSI.hStackManager.stackDefinition = 'arbitrary';  % Enables arbitrary stack traversal.
