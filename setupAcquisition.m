@@ -140,6 +140,10 @@ function setupAcquisition(hSI, hSICtl, arguments)
     
     % Configures the acquisition to operate on the set of reference Z-planes and acquire the requested number of 
     % frames at each plane (20).
+    % Confgures the stack manager to target requested planes
+    hSI.hStackManager.stackMode = 'fast';  % Enables fast-z (voice-coil)
+    hSI.hStackManager.stackFastWaveformType = 'step';  % Step mode is required for volumetric averaging
+    hSI.hStackManager.stackDefinition = "arbitrary";  % Stack has to be in arbitrary mode.
     hSI.hStackManager.arbitraryZs = sort(refZs(:));
     hSI.hStackManager.numVolumes = naverage;
     hSI.hStackManager.enable = true;
@@ -313,12 +317,15 @@ function setupAcquisition(hSI, hSICtl, arguments)
         roi.scanfields(1) = sf;
         hSI.hRoiManager.currentRoiGroup.rois(i) = roi;  % Updates ROI in the manager
     end
+    
+    % Saves the imaging field ROI to an .roi file before proceeding.
+    hSI.hRoiManager.saveRoiGroupMroi(fullfile(root, 'fov.roi'))
 
     % Re-enables the Motion Detection plugin and shows it to user.
     hSI.hMotionManager.enable = true;
     hSICtl.showGUI('MotionDisplay');
     
-    % Confgures the stack maanger to target requested planes
+    % Confgures the stack manager to target requested planes
     hSI.hStackManager.stackDefinition = 'arbitrary';  % Enables arbitrary stack traversal.
     hSI.hStackManager.stackMode = 'fast';  % Enables fast-z (voice-coil)
     hSI.hStackManager.stackFastWaveformType = 'step';  % Step mode is required for volumetric averaging
