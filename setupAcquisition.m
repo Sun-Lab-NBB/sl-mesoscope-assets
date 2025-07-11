@@ -323,6 +323,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     end
     
     % Saves the imaging field ROI to an .roi file before proceeding.
+    fprintf('Generating a snaphsot of the imaged ROIs.../n');
     hSI.hRoiManager.saveRoiGroupMroi(fullfile(root, 'fov.roi'))
 
     % Re-enables the Motion Detection plugin and shows it to user.
@@ -399,6 +400,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     end
     
     fprintf('Kinase marker removed. Terminating frame acquisition.../n');
-    hSI.startGrab;
+    hSI.abort(); % Ends acquisition
+    fprintf('Runtime: Complete./n');
 
 
