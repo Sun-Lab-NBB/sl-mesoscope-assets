@@ -61,6 +61,10 @@ function setupAcquisition(hSI, hSICtl, arguments)
     naverage = arguments.naverage;
     root = arguments.root;
     scalefactor = arguments.scalefactor;
+
+    % Statically resolves the paths to marker files used to externally trigger and stop acquisition.
+    kinase = fullfile(root, "kinase.bin");
+    phosphatase = fullfile(root, "phosphatase.bin");
     
     % Converts single zrange values to [min, max] format expected by the rest of the function.
     if isscalar(zrange)
@@ -335,21 +339,14 @@ function setupAcquisition(hSI, hSICtl, arguments)
     hSI.hStackManager.enable = true;
     hSI.hStackManager.numVolumes = 100000;  % Prevents the runtime from stopping without triggers.
     hSI.hChannels.channelDisplay = 1;  % Ensures channel 1 is displayed
-    hSI.acqsPerLoop = 200;  % To support recovering from runtime failures, this has to be large.
-    hSI.loopAcqInterval = 1;  % Although external trigger mode does not use intervals, ensures it is set to 1 for safety.
+    hSI.acqsPerLoop = 1;  % A total of one acquisition per loop
+    hSI.loopAcqInterval = 1;  % Although grab mode does not use intervals, it is minimized for added safety.
     
     % Presets frame averaging to 5 to give better picture at runtime.
     hSI.hDisplay.displayRollingAverageFactor = 5;
     
-    % Configures external trigger mode
-    hSI.extTrigEnable = true;  % Ensures that external trigger mode is enabled.
-    hSI.hScan2D.trigNextStopEnable = true;  % Ensures that stop and next triggers are enabled
-    % Acquisition start trigger
-    hSI.hScan2D.trigAcqInTerm = 'D0.0';  % Breakout panel port D0.0
-    hSI.hScan2D.trigAcqEdge = 'rising'; % Triggers on rising edge
-    % Acquisition stop trigger
-    hSI.hScan2D.trigStopInTerm = 'D0.1'; % Breakout panel port D0.1
-    hSI.hScan2D.trigStopEdge = 'rising'; % Triggers on rising edge
+    % Ensures external trigger mode is disabled
+    hSI.extTrigEnable = false;  % Ensures that external trigger mode is enabled.
     
     % Configures data output stream
     hSI.hScan2D.logFileStem = 'session';  % All data files will use the root name 'session'
@@ -375,8 +372,33 @@ function setupAcquisition(hSI, hSICtl, arguments)
     hSI.hMotionManager.hMotionCorrector.correctionInterval_s = 5;
     hSI.hMotionManager.resetCorrectionAfterAcq = 0;  % Ensures that the estimators are NOT reset between acquisitions
     
-    % Starts the acquisition loop. The actual acquisition will not start until the system receives an external trigger.
-    hSI.startLoop;
-    fprintf('Acquisition loop: Started.\n');
+    % Arms the acquisition loop by starting to monitor the presence of the necessary marker files
+    fprintf('Acquisition loop: Armed.\n');
+    fprintf('Waiting for the kinase.bin marker to be created...\n');
+
+    %% Runtime loop control
+    % Waits for the kinase marker to appear.
+    while ~isfile(kinase)
+
+        % If phosphatase marker is created, aborts the runtime early.
+        if isfile(phosphatase)
+            fprintf('Phosphatase marker detected. Aborting.\n');
+            return;
+        end
+        pause(1); % Avoid busy waiting, checks once per second.
+    end
+
+    % Activates frame acquisition (starts grabbing frames)
+    fprintf('Kinase marker detected. Initializing frame acquisition.../n');
+    hSI.startGrab();
+    
+    
+    % This loop remains active as long as the kinase marker exists.
+    while isfile(kinase)
+        pause(1); % Pause to reduce CPU load.
+    end
+    
+    fprintf('Kinase marker removed. Terminating frame acquisition.../n');
+    hSI.startGrab;
 
 
