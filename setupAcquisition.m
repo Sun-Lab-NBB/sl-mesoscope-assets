@@ -390,7 +390,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     end
 
     % Activates frame acquisition (starts grabbing frames)
-    fprintf('Kinase marker detected. Initializing frame acquisition.../n');
+    fprintf('Kinase marker detected. Initializing frame acquisition...\n');
     hSI.startGrab();
     
     
@@ -399,8 +399,8 @@ function setupAcquisition(hSI, hSICtl, arguments)
         pause(1); % Pause to reduce CPU load.
     end
     
-    fprintf('Kinase marker removed. Terminating frame acquisition.../n');
+    fprintf('Kinase marker removed. Terminating frame acquisition...\n');
     hSI.abort(); % Ends acquisition
-    fprintf('Runtime: Complete./n');
+    fprintf('Runtime: Complete.\n');
 
 
