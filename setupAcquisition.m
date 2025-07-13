@@ -70,6 +70,9 @@ function setupAcquisition(hSI, hSICtl, arguments)
     scalefactor = arguments.scalefactor;
     recovery=arguments.recovery;
 
+    % Clears the CLI
+    clc;
+
     % Statically resolves the paths to marker files used to externally trigger and stop acquisition.
     kinase = fullfile(root, "kinase.bin");
     phosphatase = fullfile(root, "phosphatase.bin");
@@ -92,10 +95,10 @@ function setupAcquisition(hSI, hSICtl, arguments)
     
     % Instructs the user to verify important imaging parameters before generating the reference stack.
     fprintf('Ensure that the following configuration parameters are applied:\n')
-    fprintf('a) Scan phase ~0.8888.\n')
-    fprintf('c) Frame rate ~10 Hz.\n')
-    fprintf('b) Laser power ~70 (~130 mV).\n')
-    fprintf('d) PMTs AutoOn: enabled.\n')
+    fprintf('a) Laser is enabled and power is set.\n')
+    fprintf('b) ROI frame rate is ~10 Hz.\n')
+    fprintf('c) Scan phase is ~0.8888.\n')
+    fprintf('d) PMTs AutoOn is enabled.\n')
     input('Enter anything to continue: ');
     
     %% Parameter Definition
@@ -138,7 +141,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         end
         hSI.hFastZ.enableFieldCurveCorr = curvcorrection;
     end
-    
+
     % Only runs motion detection and high-definition zstack preparation steps if the runtime is not in recovery mode
     if ~recovery
         %% Reference ROI setup
@@ -422,6 +425,12 @@ function setupAcquisition(hSI, hSICtl, arguments)
     
     % This loop remains active as long as the kinase marker exists.
     while isfile(kinase)
+        % This is not strictly necessary, but ensures that phosphatase marker can eliminate any ongoing 
+        % Mesoscoep acquisition at any point.
+        if isfile(phosphatase)
+            fprintf('Phosphatase marker detected. Aborting.\n');
+            return;
+        end
         pause(1); % Pause to reduce CPU load.
     end
     
