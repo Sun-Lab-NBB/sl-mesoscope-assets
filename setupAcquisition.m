@@ -138,6 +138,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         end
         hSI.hFastZ.enableFieldCurveCorr = curvcorrection;
     end
+    
     % Only runs motion detection and high-definition zstack preparation steps if the runtime is not in recovery mode
     if ~recovery
         %% Reference ROI setup
@@ -342,15 +343,17 @@ function setupAcquisition(hSI, hSICtl, arguments)
     % Re-enables the Motion Detection plugin and shows it to user.
     hSI.hMotionManager.enable = true;
     hSICtl.showGUI('MotionDisplay');
-
+    
+    % For recovery runtimes, reloads motion estimation data from the 
     if recovery
         hSI.hMotionManager.clearAndDeleteEstimators();  % Removes existing estimators.
         
         % Configures MotionEstimation plugin to use Marius scripts.
         hSI.hMotionManager.estimatorClassName = 'scanimage.components.motionEstimators.MariusMotionEstimator';
         hSI.hMotionManager.correctorClassName = 'scanimage.components.motionCorrectors.MariusMotionCorrector2';
-
-        hSI.hMotionManager.loadEstimators();
+        
+        % Loads motion estimation files currently saved in the root output folder.
+        hSI.hMotionManager.loadEstimators(fullfile(root, 'MotionEstimator.me'));
     end
     
     % Confgures the stack manager to target requested planes
