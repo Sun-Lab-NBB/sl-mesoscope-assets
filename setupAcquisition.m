@@ -35,6 +35,12 @@ function setupAcquisition(hSI, hSICtl, arguments)
     % is always set to the 'shared' mesoscoep data folder.
     % - scalefactor: The factor by which to scale the X and Y resoltuin of all ROIs during the acquisition of the
     % high-definition zstack.tiff file. The scaling maintains the initial ROI aspect ratios.
+    % - recovery: Determines whether the function is called to recover a failed runtime. In rare circumstances, the
+    % ScanimagePC or the ScanImage software may fail during an experiment runtime. In this case, the VRPC tries to
+    % execute a recovery sequence, which requires the Mesoscope to be re-armed to recieve kinase and phosphotase 
+    % triggers. If the function is called with this argument set to true, it will skip all runtime preparation steps, 
+    % load the existing MotionEstimator.me file from the mesoscope_data folder and arm the Mesoscope for receiving the
+    % acquisition trigger.
 
     % Limited argument validation and default value assignment support. May not
     % work on older MatLab versions, but good for R2022b+.
@@ -50,6 +56,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         arguments.naverage (1,1) double {mustBePositive, mustBeInteger} = 20
         arguments.root (1,:) char {mustBeNonempty} = 'F:\mesodata\mesoscope_data'
         arguments.scalefactor (1,:) double {mustBePositive} = 2.0
+        arguments.recovery (1,1) logical = false
     end
     
     zum = arguments.zum;
@@ -61,6 +68,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     naverage = arguments.naverage;
     root = arguments.root;
     scalefactor = arguments.scalefactor;
+    recovery=arguments.recovery;
 
     % Statically resolves the paths to marker files used to externally trigger and stop acquisition.
     kinase = fullfile(root, "kinase.bin");
@@ -130,205 +138,220 @@ function setupAcquisition(hSI, hSICtl, arguments)
         end
         hSI.hFastZ.enableFieldCurveCorr = curvcorrection;
     end
-    
-    %% Reference ROI setup
-    % If an acquisition is active, aborts it before changing system configuration.
-    hSI.abort();  
-    
-    % Moves to the lowest plane to be imaged. Assumes that the fast-z is inverted, so smaller planes are 
-    % actually closest tot he surface of the brain.
-    hSI.hFastZ.hFastZs{1}.move(min(centerZs))
-    
-    % Grabs the reference volumes
-    fprintf('Grabbing reference volume...\n');
-    
-    % Configures the acquisition to operate on the set of reference Z-planes and acquire the requested number of 
-    % frames at each plane (20).
-    % Confgures the stack manager to target requested planes
-    hSI.hStackManager.stackMode = 'fast';  % Enables fast-z (voice-coil)
-    hSI.hStackManager.stackFastWaveformType = 'step';  % Step mode is required for volumetric averaging
-    hSI.hStackManager.stackDefinition = "arbitrary";  % Stack has to be in arbitrary mode.
-    hSI.hStackManager.arbitraryZs = sort(refZs(:));
-    hSI.hStackManager.numVolumes = naverage;
-    hSI.hStackManager.enable = true;
-    
-    % Buffers frames in frame averaging buffer.
-    hSI.hDisplay.displayRollingAverageFactor = naverage;
-    
-    % Disables motion correction during z-stack acquisition and ensures MROI mode is active.
-    hSI.hMotionManager.enable = false;
-    hSI.hRoiManager.mroiEnable = true;
-    hSI.hStackManager.stackReturnHome = true;
-    
-    % Ensures that the grabbed frames are discarded after runtime
-    hSI.hChannels.loggingEnable = false;  % Disables data logging (saving)
-    hSI.acqsPerLoop = 1;  % Ensures that the number of acquisitions is set to 1. This is a safety check.
-    hSI.hChannels.channelDisplay = 1;  % Ensures channel 1 is displayed
-    hSI.extTrigEnable = false;  % Ensures that external trigger mode is disabled.
-    
-    % Activates frame acquisition (starts grabbing)
-    hSI.startGrab();
-    while hSI.active
-        pause(1); % waits for reference volume to be completed
-    end
-    
-    fprintf('Reference volumes: Grabbed.\n');
-    
-    %% Motion Estimators generation
-    fprintf('Setting up Motion Estimators...\n');
-    
-    hSI.hMotionManager.clearAndDeleteEstimators();  % Removes existing estimators.
-    
-    % Configures MotionEstimation plugin to use Marius scripts.
-    hSI.hMotionManager.estimatorClassName = 'scanimage.components.motionEstimators.MariusMotionEstimator';
-    hSI.hMotionManager.correctorClassName = 'scanimage.components.motionCorrectors.MariusMotionCorrector2';
-    
-    % Loads the ROI stack data from the ROI manager
-    roiDatas = hSI.hDisplay.getRoiDataArray();
-    
-    % Filters the ROI data to only contain the motion registration channel data.
-    arrayfun(@(rd)rd.onlyKeepChannels(channel),roiDatas);
-    
-    % First dimension is roi index, second dimension is volume index
-    nRois = size(roiDatas,1);
-    nVolumes = size(roiDatas,2);
-    
-    % Preallocates Z as cell array for efficiency, since the number of ROIs and planes is known.
-    Z = cell(nRois, numel(centerZs));
-    
-    % Preeallocates each Z cell by sampling ROI dimensions.
-    for roiIdx = 1:nRois
-        if ~isempty(roiDatas(roiIdx,1).imageData{1})
-            sampleImg = roiDatas(roiIdx,1).imageData{1}{1};
-            for iz = 1:numel(centerZs)
-                % Preallocates for expected number of reference planes.
-                Z{roiIdx, iz} = zeros(size(sampleImg,1), size(sampleImg,2), ...
-                                      2*nzhalf+1, 'single');
+    % Only runs motion detection and high-definition zstack preparation steps if the runtime is not in recovery mode
+    if ~recovery
+        %% Reference ROI setup
+        % If an acquisition is active, aborts it before changing system configuration.
+        hSI.abort();  
+        
+        % Moves to the lowest plane to be imaged. Assumes that the fast-z is inverted, so smaller planes are 
+        % actually closest tot he surface of the brain.
+        hSI.hFastZ.hFastZs{1}.move(min(centerZs))
+        
+        % Grabs the reference volumes
+        fprintf('Grabbing reference volume...\n');
+        
+        % Configures the acquisition to operate on the set of reference Z-planes and acquire the requested number of 
+        % frames at each plane (20).
+        % Confgures the stack manager to target requested planes
+        hSI.hStackManager.stackMode = 'fast';  % Enables fast-z (voice-coil)
+        hSI.hStackManager.stackFastWaveformType = 'step';  % Step mode is required for volumetric averaging
+        hSI.hStackManager.stackDefinition = "arbitrary";  % Stack has to be in arbitrary mode.
+        hSI.hStackManager.arbitraryZs = sort(refZs(:));
+        hSI.hStackManager.numVolumes = naverage;
+        hSI.hStackManager.enable = true;
+        
+        % Buffers frames in frame averaging buffer.
+        hSI.hDisplay.displayRollingAverageFactor = naverage;
+        
+        % Disables motion correction during z-stack acquisition and ensures MROI mode is active.
+        hSI.hMotionManager.enable = false;
+        hSI.hRoiManager.mroiEnable = true;
+        hSI.hStackManager.stackReturnHome = true;
+        
+        % Ensures that the grabbed frames are discarded after runtime
+        hSI.hChannels.loggingEnable = false;  % Disables data logging (saving)
+        hSI.acqsPerLoop = 1;  % Ensures that the number of acquisitions is set to 1. This is a safety check.
+        hSI.hChannels.channelDisplay = 1;  % Ensures channel 1 is displayed
+        hSI.extTrigEnable = false;  % Ensures that external trigger mode is disabled.
+        
+        % Activates frame acquisition (starts grabbing)
+        hSI.startGrab();
+        while hSI.active
+            pause(1); % waits for reference volume to be completed
+        end
+        
+        fprintf('Reference volumes: Grabbed.\n');
+        
+        %% Motion Estimators generation
+        fprintf('Setting up Motion Estimators...\n');
+        
+        hSI.hMotionManager.clearAndDeleteEstimators();  % Removes existing estimators.
+        
+        % Configures MotionEstimation plugin to use Marius scripts.
+        hSI.hMotionManager.estimatorClassName = 'scanimage.components.motionEstimators.MariusMotionEstimator';
+        hSI.hMotionManager.correctorClassName = 'scanimage.components.motionCorrectors.MariusMotionCorrector2';
+        
+        % Loads the ROI stack data from the ROI manager
+        roiDatas = hSI.hDisplay.getRoiDataArray();
+        
+        % Filters the ROI data to only contain the motion registration channel data.
+        arrayfun(@(rd)rd.onlyKeepChannels(channel),roiDatas);
+        
+        % First dimension is roi index, second dimension is volume index
+        nRois = size(roiDatas,1);
+        nVolumes = size(roiDatas,2);
+        
+        % Preallocates Z as cell array for efficiency, since the number of ROIs and planes is known.
+        Z = cell(nRois, numel(centerZs));
+        
+        % Preeallocates each Z cell by sampling ROI dimensions.
+        for roiIdx = 1:nRois
+            if ~isempty(roiDatas(roiIdx,1).imageData{1})
+                sampleImg = roiDatas(roiIdx,1).imageData{1}{1};
+                for iz = 1:numel(centerZs)
+                    % Preallocates for expected number of reference planes.
+                    Z{roiIdx, iz} = zeros(size(sampleImg,1), size(sampleImg,2), ...
+                                          2*nzhalf+1, 'single');
+                end
             end
         end
-    end
-    
-    fprintf('Aligning %d stacks...\n',nVolumes);
-    
-    % Loops over all ROIs
-    for roiIdx = 1:nRois
-    
-    % Copies ROI data from the ROI manager
-        roi0 = copy(roiDatas(roiIdx,:));
         
-        % Precreates a template storage structure with correct dimensions, but no image data.
-        for j = 1:naverage
-            roi0(j).imageData = [];  % Clears image data, but keeps the metadata
-        end
+        fprintf('Aligning %d stacks...\n',nVolumes);
         
-        % Finds reference planes for each target imaging position
-        for iz = 1:numel(centerZs)
-            id = find(ismember(refZs', centerZs(iz) + (-nzhalf:nzhalf)));
+        % Loops over all ROIs
+        for roiIdx = 1:nRois
+        
+        % Copies ROI data from the ROI manager
+            roi0 = copy(roiDatas(roiIdx,:));
             
-            % Extracts the data for relevant reference z-planes.
-            roi1 = copy(roi0);
+            % Precreates a template storage structure with correct dimensions, but no image data.
             for j = 1:naverage
-                roi1(j).imageData{1}  = roiDatas(roiIdx, j).imageData{1}(id);
-                roi1(j).zs  = roi1(j).zs(id);
+                roi0(j).imageData = [];  % Clears image data, but keeps the metadata
             end
             
-            % Aligns the requested number of frames (default is 20) for each plane to 
-            % create a stable reference point and adds generated reference frame data to
-            % the storage tensor.
-            alignedRoiData = hSI.hMotionManager.alignZStack(roi1);
-            img = alignedRoiData.imageData{1};
-            for j = 1:numel(img)
-                Z{roiIdx, iz}(:,:,j) = img{j};
+            % Finds reference planes for each target imaging position
+            for iz = 1:numel(centerZs)
+                id = find(ismember(refZs', centerZs(iz) + (-nzhalf:nzhalf)));
+                
+                % Extracts the data for relevant reference z-planes.
+                roi1 = copy(roi0);
+                for j = 1:naverage
+                    roi1(j).imageData{1}  = roiDatas(roiIdx, j).imageData{1}(id);
+                    roi1(j).zs  = roi1(j).zs(id);
+                end
+                
+                % Aligns the requested number of frames (default is 20) for each plane to 
+                % create a stable reference point and adds generated reference frame data to
+                % the storage tensor.
+                alignedRoiData = hSI.hMotionManager.alignZStack(roi1);
+                img = alignedRoiData.imageData{1};
+                for j = 1:numel(img)
+                    Z{roiIdx, iz}(:,:,j) = img{j};
+                end
+                
+                % Generates and adds the motion estimator for the target ROI to the Motion Detection
+                % manager
+                hSI.hMotionManager.addEstimator(alignedRoiData);
             end
             
-            % Generates and adds the motion estimator for the target ROI to the Motion Detection
-            % manager
-            hSI.hMotionManager.addEstimator(alignedRoiData);
         end
         
+        % Saves the generated and applied motion estimators as MotionEstimator.me file
+        fprintf('Generating MotionEstimator.me file...\n');
+        hSI.hMotionManager.saveManagedEstimators(fullfile(root, 'MotionEstimator.me'));
+        %%
+        
+        %% High-definition zstack acquisition
+        fprintf('Acquiring a high-definition zstack...\n');
+    
+        % Disables motion correction during z-stack acquisition and ensures MROI mode is active.
+        hSI.hMotionManager.enable = false;
+        hSI.hRoiManager.mroiEnable = true;
+        hSI.hStackManager.stackReturnHome = true;
+        
+        % Scales X and Y resolution of each ROI by the requested scale factor, generating a higher-definition zstack.
+        for i = 1:numel(hSI.hRoiManager.currentRoiGroup.rois)
+            roi = hSI.hRoiManager.currentRoiGroup.rois(i);
+            sf = roi.scanfields(1);
+        
+            % Scales current pixel dimensions
+            sf.pixelResolutionXY(1) = round(scalefactor * sf.pixelResolutionXY(1));
+            sf.pixelResolutionXY(2) = round(scalefactor * sf.pixelResolutionXY(2));
+        
+            % Reassigns updated scan field
+            roi.scanfields(1) = sf;
+            hSI.hRoiManager.currentRoiGroup.rois(i) = roi;  % Updates the ROI in the manager
+        end
+        
+        % Configures the acquisition to operate on the set of reference Z-planes and acquire the requested number of 
+        % frames at each plane.
+        hSI.hStackManager.arbitraryZs = sort(refZs(:));
+        hSI.hStackManager.numVolumes = naverage;
+        hSI.hStackManager.enable = true;
+        
+        % Buffers frames in frame averaging buffer.
+        hSI.hDisplay.displayRollingAverageFactor = naverage;
+        
+        % Ensures that the grabbed frames are saved as 'zstack_0000.tiff' file.
+        hSI.hScan2D.logOverwriteWarn = false; % Disables overwrite warning
+        hSI.hChannels.loggingEnable = true;  % Enables data logging (saving)
+        hSI.hScan2D.logAverageFactor = 1;  % Saves every frame (no averaging in saved data)
+        hSI.hScan2D.logFilePath = root;  % Configures the root output directory
+        hSI.hScan2D.logFileStem = 'zstack';  % Saves teh stack data as 'zstack'
+        hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
+        hSI.hScan2D.logFramesPerFile = 500;  % Configures tiff stacks to store at most 500 frames.
+        hSI.acqsPerLoop = 1;  % Ensures that the number of acquisitions is set to 1. This is a safety check.
+        hSI.hChannels.channelDisplay = 1;  % Ensures channel 1 is displayed
+        hSI.extTrigEnable = false;  % Ensures that external trigger mode is disabled.
+        
+        % Activates frame acquisition (starts grabbing)
+        hSI.startGrab();
+        while hSI.active
+            pause(1); % Waits for the stack to be acquired
+        end
+        
+        fprintf('High-definition zstack: Acquired.\n');
+        %%
+        
+        %% Prepares the system for acquisition
+        fprintf('Preparing system for acquisition...\n');
+    
+        % Loops through each ROI and rescales it back to the original dimensions (from high-definition ones)
+        for i = 1:numel(hSI.hRoiManager.currentRoiGroup.rois)
+            roi = hSI.hRoiManager.currentRoiGroup.rois(i);
+            sf = roi.scanfields(1);
+        
+            % Scalse current pixel dimensions
+            sf.pixelResolutionXY(1) = round(1/scalefactor * sf.pixelResolutionXY(1));
+            sf.pixelResolutionXY(2) = round(1/scalefactor * sf.pixelResolutionXY(2));
+    
+            % Reassignd updated scan field
+            roi.scanfields(1) = sf;
+            hSI.hRoiManager.currentRoiGroup.rois(i) = roi;  % Updates ROI in the manager
+        end
+        
+        % Saves the imaging field ROI to an .roi file before proceeding.
+        fprintf('Generating a snaphsot of the imaged ROIs...\n');
+        hSI.hRoiManager.saveRoiGroupMroi(fullfile(root, 'fov.roi'))
     end
     
-    % Saves the generated and applied motion estimators as MotionEstimator.me file
-    fprintf('Generating MotionEstimator.me file...\n');
-    hSI.hMotionManager.saveManagedEstimators(fullfile(root, 'MotionEstimator.me'));
-    %%
-    
-    %% High-definition zstack acquisition
-    fprintf('Acquiring a high-definition zstack...\n');
-
-    % Disables motion correction during z-stack acquisition and ensures MROI mode is active.
-    hSI.hMotionManager.enable = false;
-    hSI.hRoiManager.mroiEnable = true;
-    hSI.hStackManager.stackReturnHome = true;
-    
-    % Scales X and Y resolution of each ROI by the requested scale factor, generating a higher-definition zstack.
-    for i = 1:numel(hSI.hRoiManager.currentRoiGroup.rois)
-        roi = hSI.hRoiManager.currentRoiGroup.rois(i);
-        sf = roi.scanfields(1);
-    
-        % Scales current pixel dimensions
-        sf.pixelResolutionXY(1) = round(scalefactor * sf.pixelResolutionXY(1));
-        sf.pixelResolutionXY(2) = round(scalefactor * sf.pixelResolutionXY(2));
-    
-        % Reassigns updated scan field
-        roi.scanfields(1) = sf;
-        hSI.hRoiManager.currentRoiGroup.rois(i) = roi;  % Updates the ROI in the manager
-    end
-    
-    % Configures the acquisition to operate on the set of reference Z-planes and acquire the requested number of 
-    % frames at each plane.
-    hSI.hStackManager.arbitraryZs = sort(refZs(:));
-    hSI.hStackManager.numVolumes = naverage;
-    hSI.hStackManager.enable = true;
-    
-    % Buffers frames in frame averaging buffer.
-    hSI.hDisplay.displayRollingAverageFactor = naverage;
-    
-    % Ensures that the grabbed frames are saved as 'zstack_0000.tiff' file.
-    hSI.hScan2D.logOverwriteWarn = false; % Disables overwrite warning
-    hSI.hChannels.loggingEnable = true;  % Enables data logging (saving)
-    hSI.hScan2D.logAverageFactor = 1;  % Saves every frame (no averaging in saved data)
-    hSI.hScan2D.logFilePath = root;  % Configures the root output directory
-    hSI.hScan2D.logFileStem = 'zstack';  % Saves teh stack data as 'zstack'
-    hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
-    hSI.hScan2D.logFramesPerFile = 500;  % Configures tiff stacks to store at most 500 frames.
-    hSI.acqsPerLoop = 1;  % Ensures that the number of acquisitions is set to 1. This is a safety check.
-    hSI.hChannels.channelDisplay = 1;  % Ensures channel 1 is displayed
-    hSI.extTrigEnable = false;  % Ensures that external trigger mode is disabled.
-    
-    % Activates frame acquisition (starts grabbing)
-    hSI.startGrab();
-    while hSI.active
-        pause(1); % Waits for the stack to be acquired
-    end
-    
-    fprintf('High-definition zstack: Acquired.\n');
-    %%
-    
-    %% Prepares the system for acquisition
-    fprintf('Preparing system for acquisition...\n');
-
-    % Loops through each ROI and rescales it back to the original dimensions (from high-definition ones)
-    for i = 1:numel(hSI.hRoiManager.currentRoiGroup.rois)
-        roi = hSI.hRoiManager.currentRoiGroup.rois(i);
-        sf = roi.scanfields(1);
-    
-        % Scalse current pixel dimensions
-        sf.pixelResolutionXY(1) = round(1/scalefactor * sf.pixelResolutionXY(1));
-        sf.pixelResolutionXY(2) = round(1/scalefactor * sf.pixelResolutionXY(2));
-
-        % Reassignd updated scan field
-        roi.scanfields(1) = sf;
-        hSI.hRoiManager.currentRoiGroup.rois(i) = roi;  % Updates ROI in the manager
-    end
-    
-    % Saves the imaging field ROI to an .roi file before proceeding.
-    fprintf('Generating a snaphsot of the imaged ROIs.../n');
-    hSI.hRoiManager.saveRoiGroupMroi(fullfile(root, 'fov.roi'))
+    % Ensures no acquisition is running before preparing for runtime
+    hSI.abort();
 
     % Re-enables the Motion Detection plugin and shows it to user.
     hSI.hMotionManager.enable = true;
     hSICtl.showGUI('MotionDisplay');
+
+    if recovery
+        hSI.hMotionManager.clearAndDeleteEstimators();  % Removes existing estimators.
+        
+        % Configures MotionEstimation plugin to use Marius scripts.
+        hSI.hMotionManager.estimatorClassName = 'scanimage.components.motionEstimators.MariusMotionEstimator';
+        hSI.hMotionManager.correctorClassName = 'scanimage.components.motionCorrectors.MariusMotionCorrector2';
+
+        hSI.hMotionManager.loadEstimators();
+    end
     
     % Confgures the stack manager to target requested planes
     hSI.hStackManager.stackDefinition = 'arbitrary';  % Enables arbitrary stack traversal.
@@ -351,11 +374,11 @@ function setupAcquisition(hSI, hSICtl, arguments)
     
     % Configures data output stream
     hSI.hScan2D.logFileStem = 'session';  % All data files will use the root name 'session'
-    hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
+    if ~recovery
+        % Only resets the acquisition counter if the runtime is not in recovery mode
+        hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
+    end
     hSI.hScan2D.logFramesPerFile = 500;  % Configures tiff stacks to store at most 500 frames.
-    
-    % Ensures that the motion estimator is enabled
-    hSI.hMotionManager.enable = true;
     
     % Configures the motion estimation parameters
     tau = 100; % Increased from the default value of 50
