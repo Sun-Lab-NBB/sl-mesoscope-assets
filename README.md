@@ -20,6 +20,19 @@ bidirectionally interface with the ScanImage software that controls the Mesoscop
 
 ___
 
+## Table of Contents
+
+- [Dependencies](#dependencies)
+- [Installation](#installation)
+- [Usage](#usage)
+- [API Documentation](#api-documentation)
+- [Versioning](#versioning)
+- [Authors](#authors)
+- [License](#license)
+- [Acknowledgements](#Acknowledgments)
+
+___
+
 ## Dependencies
 
 ### Main Dependency
