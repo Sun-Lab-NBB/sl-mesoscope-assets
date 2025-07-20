@@ -2,7 +2,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     % SETUPACQUISITION Prepares the Mesoscope system for acquiring experiment data in the Sun lab.
     %
     %   This is a heavily refactored 'setupZstackALL' function used in the original manuscript. The functon was 
-    %   refactored to specialize it to work with the rest of Sun lab data acquisition specifciations and bindings.
+    %   refactored to specialize it to work with the rest of Sun lab data acquisition specifications and bindings.
     %   In addition to setting up motion estimation, the function now also statically configures ScanImage to 
     %   acquire the data in a way that is expected by Sun lab pipelines and generates a high-definition zstack.
     %
@@ -25,19 +25,19 @@ function setupAcquisition(hSI, hSICtl, arguments)
     % acquisition order iterates over the slices at each volume acquisition, e.g.: Z1, Z2, Z1, Z2. The 'smooth' order 
     % instead acquires all frames at the given z-plane before moving to the next one, e.g. Z1, Z1, Z2, Z2.
     % - channel: The chanel to use for motion registration. Since high-definition zstack is primarily intended to
-    % support advanced post-hoc motion analysis, it also uses the same cahnnel.
+    % support advanced post-hoc motion analysis, it also uses the same channel.
     % - curvcorrection: Determines whether to enable or disable Field Curvature Correction support. Whether to enable
     % this feature depends on the acquisition system (microscope).
     % - naverage: The number of frames to acquire and average for each frame. Larger number of frames results in better
     % motion characterization at the expense of longer processing times and higher draw on acquisition machine
     % resources.
     % - root: The path at which to output the generated MotionEstimator.me and zstack.tiff files. In the Sun lab, this
-    % is always set to the 'shared' mesoscoep data folder.
-    % - scalefactor: The factor by which to scale the X and Y resoltuin of all ROIs during the acquisition of the
+    % is always set to the 'shared' mesoscope data folder.
+    % - scalefactor: The factor by which to scale the X and Y resolution of all ROIs during the acquisition of the
     % high-definition zstack.tiff file. The scaling maintains the initial ROI aspect ratios.
     % - recovery: Determines whether the function is called to recover a failed runtime. In rare circumstances, the
     % ScanimagePC or the ScanImage software may fail during an experiment runtime. In this case, the VRPC tries to
-    % execute a recovery sequence, which requires the Mesoscope to be re-armed to recieve kinase and phosphotase 
+    % execute a recovery sequence, which requires the Mesoscope to be re-armed to receive kinase and phosphotase
     % triggers. If the function is called with this argument set to true, it will skip all runtime preparation steps, 
     % load the existing MotionEstimator.me file from the mesoscope_data folder and arm the Mesoscope for receiving the
     % acquisition trigger.
@@ -115,7 +115,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     else
         % If zmirror is provided, creates two plane sequences expanding outward from each of the imaging 
         % focal points, given by zmirror. Assumes that both zmirror coordinates are within the range of planes
-        % specified by zrange. This excluds the middle region (slices within zmirror) from processing. This mode of 
+        % specified by zrange. This excludes the middle region (slices within zmirror) from processing. This mode of
         % stack definition is used exclusively with two-plane imaging modes.
         centerZs = [zmirror(1)-nzhalf:-zum:zrange(1) zmirror(2)+nzhalf:zum:zrange(2)];
     end
@@ -131,7 +131,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         refZs = refZs';
     end
     
-    % Depending on the configuration, ensures that FieldCurvatureCorredction is either enabled or disabled.
+    % Depending on the configuration, ensures that FieldCurvatureCorrection is either enabled or disabled.
     % For Mesoscope, it should be enabled in most cases.
     if hSI.hFastZ.enableFieldCurveCorr ~= curvcorrection
         if curvcorrection
@@ -157,7 +157,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         
         % Configures the acquisition to operate on the set of reference Z-planes and acquire the requested number of 
         % frames at each plane (20).
-        % Confgures the stack manager to target requested planes
+        % Configures the stack manager to target requested planes
         hSI.hStackManager.stackMode = 'fast';  % Enables fast-z (voice-coil)
         hSI.hStackManager.stackFastWaveformType = 'step';  % Step mode is required for volumetric averaging
         hSI.hStackManager.stackDefinition = "arbitrary";  % Stack has to be in arbitrary mode.
@@ -209,7 +209,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         % Preallocates Z as cell array for efficiency, since the number of ROIs and planes is known.
         Z = cell(nRois, numel(centerZs));
         
-        % Preeallocates each Z cell by sampling ROI dimensions.
+        % Preallocates each Z cell by sampling ROI dimensions.
         for roiIdx = 1:nRois
             if ~isempty(roiDatas(roiIdx,1).imageData{1})
                 sampleImg = roiDatas(roiIdx,1).imageData{1}{1};
@@ -326,17 +326,17 @@ function setupAcquisition(hSI, hSICtl, arguments)
             roi = hSI.hRoiManager.currentRoiGroup.rois(i);
             sf = roi.scanfields(1);
         
-            % Scalse current pixel dimensions
+            % Scales current pixel dimensions
             sf.pixelResolutionXY(1) = round(1/scalefactor * sf.pixelResolutionXY(1));
             sf.pixelResolutionXY(2) = round(1/scalefactor * sf.pixelResolutionXY(2));
     
-            % Reassignd updated scan field
+            % Reassigns updated scan field
             roi.scanfields(1) = sf;
             hSI.hRoiManager.currentRoiGroup.rois(i) = roi;  % Updates ROI in the manager
         end
         
         % Saves the imaging field ROI to an .roi file before proceeding.
-        fprintf('Generating a snaphsot of the imaged ROIs...\n');
+        fprintf('Generating a snapshot of the imaged ROIs...\n');
         hSI.hRoiManager.saveRoiGroupMroi(fullfile(root, 'fov.roi'))
     end
     
@@ -359,7 +359,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         hSI.hMotionManager.loadEstimators(fullfile(root, 'MotionEstimator.me'));
     end
     
-    % Confgures the stack manager to target requested planes
+    % Configures the stack manager to target requested planes
     hSI.hStackManager.stackDefinition = 'arbitrary';  % Enables arbitrary stack traversal.
     hSI.hStackManager.stackMode = 'fast';  % Enables fast-z (voice-coil)
     hSI.hStackManager.stackFastWaveformType = 'step';  % Step mode is required for volumetric averaging
@@ -391,7 +391,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     fs = hSI.hRoiManager.scanFrameRate;
     hSI.hMotionManager.hMotionCorrector.correctionThreshold = [.1 .1 .5];  % x, y, z
     hSI.hMotionManager.correctionDeviceZ  = 'fastz';  % Uses fastZ to correct z-drift
-    hSI.hMotionManager.correctionEnableZ = true;  % Enables Z-drift corection
+    hSI.hMotionManager.correctionEnableZ = true;  % Enables Z-drift correction
     hSI.hMotionManager.correctionDeviceXY = 'galvos';  % Uses galvos to correct X/Y drift
     hSI.hMotionManager.correctionEnableXY = true;  % Enables X/Y correction
     hSI.hMotionManager.hMotionCorrector.pC  = exp(-1/(tau*fs));
@@ -426,7 +426,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     % This loop remains active as long as the kinase marker exists.
     while isfile(kinase)
         % This is not strictly necessary, but ensures that phosphatase marker can eliminate any ongoing 
-        % Mesoscoep acquisition at any point.
+        % Mesoscope acquisition at any point.
         if isfile(phosphatase)
             fprintf('Phosphatase marker detected. Aborting.\n');
             return;
