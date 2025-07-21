@@ -438,8 +438,8 @@ function setupAcquisition(hSI, hSICtl, arguments)
     hSI.abort(); % Ends acquisition
     
     % Resets the motion estimation and ROI windows to support the next acquisition
-    hSI.hRoiManager.currentRoiGroup.clear
     hSI.hMotionManager.clearAndDeleteEstimators();
+    hSI.hRoiManager.currentRoiGroup.clear
 
     fprintf('Runtime: Complete.\n');
 
