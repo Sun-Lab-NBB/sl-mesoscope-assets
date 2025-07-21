@@ -436,6 +436,11 @@ function setupAcquisition(hSI, hSICtl, arguments)
     
     fprintf('Kinase marker removed. Terminating frame acquisition...\n');
     hSI.abort(); % Ends acquisition
+    
+    % Resets the motion estimation and ROI windows to support the next acquisition
+    hSI.hRoiManager.currentRoiGroup.clear
+    hSI.hMotionManager.clearAndDeleteEstimators();
+
     fprintf('Runtime: Complete.\n');
 
 
