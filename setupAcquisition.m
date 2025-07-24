@@ -400,7 +400,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     hSI.hMotionManager.hMotionCorrector.thresholdExceedTime_s = 5;  
     % The interval at which to evaluate the need for correction (check the deviation of all managed axes).
     hSI.hMotionManager.hMotionCorrector.correctionInterval_s = 5;
-    hSI.hMotionManager.resetCorrectionAfterAcq = 0;  % Ensures that the estimators are NOT reset between acquisitions
+    hSI.hMotionManager.resetCorrectionAfterAcq = 1; % Ensures that the correction offsets are reset between acquisitions
     
     % Arms the acquisition loop by starting to monitor the presence of the necessary marker files
     fprintf('Acquisition loop: Armed.\n');
@@ -440,6 +440,11 @@ function setupAcquisition(hSI, hSICtl, arguments)
     % Resets the motion estimation and ROI windows to support the next acquisition
     hSI.hMotionManager.clearAndDeleteEstimators();
     hSI.hRoiManager.currentRoiGroup.clear
+
+    % To optimize batch experiments, disables automatic correction. When new animals are placed under the mesoscope, 
+    % the user usually carries out correction manually before enabling automated adjustments.
+    hSI.hMotionManager.correctionEnableXY = false;
+    hSI.hMotionManager.correctionEnableZ = false;
 
     fprintf('Runtime: Complete.\n');
 
