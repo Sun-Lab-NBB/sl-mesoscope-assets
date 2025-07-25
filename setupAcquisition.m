@@ -413,6 +413,16 @@ function setupAcquisition(hSI, hSICtl, arguments)
         % If phosphatase marker is created, aborts the runtime early.
         if isfile(phosphatase)
             fprintf('Phosphatase marker detected. Aborting.\n');
+            
+            % Resets the motion estimation and ROI windows to support the next acquisition
+            hSI.hMotionManager.clearAndDeleteEstimators();
+            hSI.hRoiManager.currentRoiGroup.clear
+        
+            % To optimize batch experiments, disables automatic correction. When new animals are placed under the 
+            % mesoscope, the user usually carries out correction manually before enabling automated adjustments.
+            hSI.hMotionManager.correctionEnableXY = false;
+            hSI.hMotionManager.correctionEnableZ = false;
+
             return;
         end
         pause(1); % Avoid busy waiting, checks once per second.
@@ -429,6 +439,18 @@ function setupAcquisition(hSI, hSICtl, arguments)
         % Mesoscope acquisition at any point.
         if isfile(phosphatase)
             fprintf('Phosphatase marker detected. Aborting.\n');
+            
+            hSI.abort(); % Ends acquisition
+    
+            % Resets the motion estimation and ROI windows to support the next acquisition
+            hSI.hMotionManager.clearAndDeleteEstimators();
+            hSI.hRoiManager.currentRoiGroup.clear
+        
+            % To optimize batch experiments, disables automatic correction. When new animals are placed under the 
+            % mesoscope, the user usually carries out correction manually before enabling automated adjustments.
+            hSI.hMotionManager.correctionEnableXY = false;
+            hSI.hMotionManager.correctionEnableZ = false;
+
             return;
         end
         pause(1); % Pause to reduce CPU load.
