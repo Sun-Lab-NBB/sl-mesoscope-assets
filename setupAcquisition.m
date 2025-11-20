@@ -316,6 +316,16 @@ function setupAcquisition(hSI, hSICtl, arguments)
         end
         
         fprintf('High-definition zstack: Acquired.\n');
+
+        % Renames the acquired zstack file from ScanImage's default naming to 'zstack.tiff'
+        sourceFile = fullfile(root, 'zstack_00000_00001.tif');
+        destFile = fullfile(root, 'zstack.tiff');
+        if isfile(sourceFile)
+            movefile(sourceFile, destFile);
+            fprintf('Renamed zstack file to: zstack.tiff\n');
+        else
+            warning('Expected zstack file not found: %s', sourceFile);
+        end
         %%
         
         %% Prepares the system for acquisition
