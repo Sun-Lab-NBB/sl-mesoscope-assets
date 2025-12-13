@@ -1,13 +1,9 @@
 function setupAcquisition(hSI, hSICtl, arguments)
     % SETUPACQUISITION Prepares the Mesoscope system for acquiring experiment data in the Sun lab.
     %
-    %   This is a heavily refactored 'setupZstackALL' function used in the original manuscript. The functon was 
-    %   refactored to specialize it to work with the rest of Sun lab data acquisition specifications and bindings.
-    %   In addition to setting up motion estimation, the function now also statically configures ScanImage to 
-    %   acquire the data in a way that is expected by Sun lab pipelines and generates a high-definition zstack.
-    %
-    %   This function should be used to prepare the system for each experiment runtime, just before starting the
-    %   experiment.
+    %   This is a heavily refactored 'setupZstackALL' function used in the original manuscript. The function was 
+    %   refactored to work with the Sun lab's data acquisition infrastructure. The function should be used to prepare
+    %   the system for each data acquisition runtime.
     %
     %   Example function call (using default parameters): setupAcquisition(hSI, hSICtl)
     %
@@ -24,7 +20,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     % - order: The order to use for z-stack acquisition. Supported options are '' (default) and 'smooth'. Default
     % acquisition order iterates over the slices at each volume acquisition, e.g.: Z1, Z2, Z1, Z2. The 'smooth' order 
     % instead acquires all frames at the given z-plane before moving to the next one, e.g. Z1, Z1, Z2, Z2.
-    % - channel: The chanel to use for motion registration. Since high-definition zstack is primarily intended to
+    % - channel: The channel to use for motion registration. Since high-definition zstack is primarily intended to
     % support advanced post-hoc motion analysis, it also uses the same channel.
     % - curvcorrection: Determines whether to enable or disable Field Curvature Correction support. Whether to enable
     % this feature depends on the acquisition system (microscope).
@@ -37,7 +33,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     % high-definition zstack.tiff file. The scaling maintains the initial ROI aspect ratios.
     % - recovery: Determines whether the function is called to recover a failed runtime. In rare circumstances, the
     % ScanimagePC or the ScanImage software may fail during an experiment runtime. In this case, the VRPC tries to
-    % execute a recovery sequence, which requires the Mesoscope to be re-armed to receive kinase and phosphotase
+    % execute a recovery sequence, which requires the Mesoscope to be re-armed to receive kinase and phosphatase
     % triggers. If the function is called with this argument set to true, it will skip all runtime preparation steps, 
     % load the existing MotionEstimator.me file from the mesoscope_data folder and arm the Mesoscope for receiving the
     % acquisition trigger.
@@ -68,7 +64,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     naverage = arguments.naverage;
     root = arguments.root;
     scalefactor = arguments.scalefactor;
-    recovery=arguments.recovery;
+    recovery = arguments.recovery;
 
     % Clears the CLI
     clc;
@@ -148,8 +144,8 @@ function setupAcquisition(hSI, hSICtl, arguments)
         % If an acquisition is active, aborts it before changing system configuration.
         hSI.abort();  
         
-        % Moves to the lowest plane to be imaged. Assumes that the fast-z is inverted, so smaller planes are 
-        % actually closest tot he surface of the brain.
+        % Moves to the lowest plane to be imaged. Assumes that the fast-z is inverted, so smaller planes are
+        % actually closest to the surface of the brain.
         hSI.hFastZ.hFastZs{1}.move(min(centerZs))
         
         % Grabs the reference volumes
@@ -302,7 +298,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         hSI.hChannels.loggingEnable = true;  % Enables data logging (saving)
         hSI.hScan2D.logAverageFactor = 1;  % Saves every frame (no averaging in saved data)
         hSI.hScan2D.logFilePath = root;  % Configures the root output directory
-        hSI.hScan2D.logFileStem = 'zstack';  % Saves teh stack data as 'zstack'
+        hSI.hScan2D.logFileStem = 'zstack';  % Saves the stack data as 'zstack'
         hSI.hScan2D.logFileCounter = 0;  % Resets the acquisition file counter
         hSI.hScan2D.logFramesPerFile = 500;  % Configures tiff stacks to store at most 500 frames.
         hSI.acqsPerLoop = 1;  % Ensures that the number of acquisitions is set to 1. This is a safety check.
@@ -357,7 +353,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     hSI.hMotionManager.enable = true;
     hSICtl.showGUI('MotionDisplay');
     
-    % For recovery runtimes, reloads motion estimation data from the 
+    % For recovery runtimes, reloads motion estimation data from the root output folder.
     if recovery
         hSI.hMotionManager.clearAndDeleteEstimators();  % Removes existing estimators.
         
@@ -386,7 +382,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
     hSI.hDisplay.displayRollingAverageFactor = 5;
     
     % Ensures external trigger mode is disabled
-    hSI.extTrigEnable = false;  % Ensures that external trigger mode is enabled.
+    hSI.extTrigEnable = false;  % Ensures that external trigger mode is disabled.
     
     % Configures data output stream
     hSI.hScan2D.logFileStem = 'session';  % All data files will use the root name 'session'

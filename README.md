@@ -5,7 +5,7 @@ Provides MATLAB assets used to acquire experiment data with ScanImage-controlled
 ![matlab](https://img.shields.io/badge/matlab-R2022b%2B-orange)
 ![license](https://img.shields.io/badge/license-GPLv3-blue)
 
-___
+---
 
 ## Detailed Description
 
@@ -18,7 +18,7 @@ Additionally, the project provides the 'setupAcquisition' function, developed in
 for data acquisition and enable the [sl-experiment](https://github.com/Sun-Lab-NBB/sl-experiment) library to 
 bidirectionally interface with the ScanImage software that controls the Mesoscope during runtime.
 
-___
+---
 
 ## Table of Contents
 
@@ -31,14 +31,13 @@ ___
 - [License](#license)
 - [Acknowledgements](#Acknowledgments)
 
-___
+---
 
 ## Dependencies
 
 ### Main Dependency
 - [MATLAB](https://www.mathworks.com/products/matlab.html) version R2022b+ with 
-[ScanImage](https://www.mbfbioscience.com/products/scanimage/) version 2023.1.0 (Premium). This code will likely work 
-with later MATLAB and ScanImage versions.
+[ScanImage](https://www.mbfbioscience.com/products/scanimage/) version 2023.1.0 (Premium).
 
 ### Additional Dependencies
 These additional toolbox dependencies must be installed via the MATLAB interface before using assets from this project:
@@ -52,20 +51,21 @@ software dependencies.
 
 - [Nvidia GPU](https://www.nvidia.com/en-us/). This library uses GPU hardware acceleration to support online motion 
 detection and correction by processing Mesoscope-acquired images. The library was tested with **Nvidia GTX 1660**.
-___
+
+---
 
 ## Installation
 
 1. Download this repository to the Mesoscope control PC. Use the latest stable release from 
-   [GitHub](https://github.com/Sun-Lab-NBB/sl-mesoscope-assets/releases), as it always reflects the current state of 
-   our data acquisition hardware and software.
+   [GitHub](https://github.com/Sun-Lab-NBB/sl-mesoscope-assets/releases).
 2. Open MATLAB and navigate to the **Command Window**.
 3. Use the `addpath("PATH_TO_THIS_REPOSITORY")` command, replacing the **PATH_TO_THIS_REPOSITORY** with the **absolute**
    path to the downloaded and unpacked repository on the local machine.
 
 If installation worked as expected, the `setupAcquisition()` MATLAB function should now be available for calling from 
 the Command Window.
-___
+
+---
 
 ## Usage
 
@@ -73,8 +73,8 @@ All assets from this library are intended to be used via the `setupAcquisition` 
 motion detection and correction. It also generates the motion estimation files as part of the acquisition preparation 
 sequence.
 
-The [sl-experiment](https://github.com/Sun-Lab-NBB/sl-experiment) advises the user to call the setup function as part of 
-the broader Mesoscope preparation sequence. While it is possible to use provided assets outside the sl-experiment 
+The [sl-experiment](https://github.com/Sun-Lab-NBB/sl-experiment) advises the user to call the setup function as part 
+of the broader Mesoscope preparation sequence. While it is possible to use provided assets outside the sl-experiment 
 context, this is not the intended use pattern.
 
 ### Acquisition Setup Flow
@@ -84,17 +84,18 @@ In most cases, `setupAcquisition` function consists of three major steps:
    parameters and establishes the single-plane or the z-stack of planes to be acquired at runtime. Then, it generates a 
    set of additional sub-planes within 20 microns above and below each target plane and acquires ~ 20 images at each 
    plane (traversing the entire stack on each acquisition pass). The produced z-stack is then used to set up the 
-   MotionEstimator file used to detect and correct motion in the X, Y and Z axes.
+   MotionEstimator file used to detect and correct motion in the X, Y, and Z axes.
 2. **High-definition zstack acquisition**. After setting up the motion detection, the function increases the resolution
    of the target ROIs by 1.5 Scale Factor and repeats the zstack acquisition. This generates a high-definition 
-   zstack.tiff file kept with the TIFF files acquired during experiment runtime.
+   zstack.tiff file kept with the TIFF files acquired during runtime.
 3. **Data Acquisition**. Finally, the function configures the acquisition and motion detection parameters for the 
-   runtime and enters the acquisition loop. While in the loop, the function starts or stops the acquisition depending on 
-   the marker file(s) created by the sl-experiment library (see sl-experiment ReadMe for details).
+   runtime and enters the acquisition loop. While in the loop, the function starts or stops the acquisition depending 
+   on the presence of the marker file(s) created by the sl-experiment library (see sl-experiment ReadMe for details).
 
 **Note!** The function can also be used to resume an interrupted runtime by calling it with an optional `recovery` 
 argument set to **true**. In this runtime mode, the function skips steps 1 and 2, going directly to step 3.
-___
+
+---
 
 ## API Documentation
 
@@ -104,12 +105,12 @@ After generating the documentation, use the `help` MATLAB command to view the do
 **Note!** All users are highly encouraged to check the setupAcquisition documentation to familiarize themselves with 
 function arguments and the range of supported runtime configuration options.
 
-___
+---
 
 ## Versioning
 
-This project uses [semantic versioning](https://semver.org/). For the versions available, see the 
-[tags on this repository](https://github.com/Sun-Lab-NBB/sl-mesoscope-assets/tags).
+This project uses [semantic versioning](https://semver.org/). See the
+[tags on this repository](https://github.com/Sun-Lab-NBB/sl-mesoscope-assets/tags) for the available project releases.
 
 ---
 
@@ -130,8 +131,8 @@ This project is licensed under the GPL3 License: see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- All [Sun Lab](https://neuroai.github.io/sunlab/) members for providing the inspiration and comments during the
-  development of this project.
+- All Sun lab [members](https://neuroai.github.io/sunlab/people) for providing the inspiration and comments during the
+  development of this library.
 - The members of the [Pachitariu and Stringer lab](https://mouseland.github.io/) that developed the motion detection
   and correction code featured in this project and the original acquisition setup function.
 

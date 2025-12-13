@@ -3,7 +3,7 @@
 classdef MariusMotionCorrector2 < scanimage.interfaces.IMotionCorrector    
     properties (SetObservable)
         runningAverageLength_s = 3;     % running average length in seconds for motion correction value
-        correctionInterval_s = 10;      % interval for motion correction events in secondes
+        correctionInterval_s = 10;      % interval for motion correction events in seconds
         correctionThreshold = [1 1 10]; % units are in [degrees degrees micron]
         thresholdExceedTime_s = 0;      % only correct if dR has been above the threshold for N seconds
         pC = 0.975;                     % time smoothing factor for the z-correlation
@@ -257,6 +257,8 @@ classdef MariusMotionCorrector2 < scanimage.interfaces.IMotionCorrector
             ref_zs = ref_zs(zCorrAvailableMask);
             
             if isempty(im_zs)
+                dx = 0;
+                dy = 0;
                 dz = 0;
                 return % nothing to do here
             end
