@@ -48,7 +48,7 @@ function setupAcquisition(hSI, hSICtl, arguments)
         arguments.zmirror double {mustBePositive, mustBeInteger} = []
         arguments.order {mustBeMember(arguments.order, {'', 'smooth'})} = ''
         arguments.channel (1,1) double {mustBePositive, mustBeInteger} = 1
-        arguments.curvcorrection (1,1) logical = true
+        arguments.curvcorrection (1,1) logical = false
         arguments.naverage (1,1) double {mustBePositive, mustBeInteger} = 20
         arguments.root (1,:) char {mustBeNonempty} = 'F:\mesodata\mesoscope_data'
         arguments.scalefactor (1,:) double {mustBePositive} = 2.0
